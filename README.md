@@ -284,14 +284,4 @@ BRASP/SGPShift assume 25-joint NTU skeletons; adaptation to 17-joint COCO or 133
 
 ---
 
-## Citation
 
-```bibtex
-@inproceedings{sfz2026,
-  title     = {Anatomy is Free: Zero-Parameter Structural Priors for Efficient Skeleton Action Recognition},
-  author    = {Chowdhury, Pathikreet and Bhattacharya, Anubhav and Srivastava, Gargi},
-  booktitle = {Proceedings of the 34th ACM International Conference on Multimedia (BNI Track)},
-  year      = {2026},
-  location  = {Melbourne, Australia},
-}
-```
