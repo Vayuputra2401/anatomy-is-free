@@ -1,8 +1,6 @@
 # Anatomy is Free: Zero-Parameter Structural Priors for Efficient Skeleton Action Recognition
 
-**ShiftFuse-Zero (SFZ)** — ACM MM 2026 BNI Track
 
-*Pathikreet Chowdhury, Anubhav Bhattacharya, Dr. Gargi Srivastava*
 
 ---
 
