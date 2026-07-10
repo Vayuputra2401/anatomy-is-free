@@ -188,6 +188,11 @@ def main():
                         help='Model variant')
     parser.add_argument('--dataset', type=str, default='ntu60', choices=['ntu60', 'ntu120'],
                         help='Dataset (default: ntu60)')
+    parser.add_argument('--shift_type', type=str, default='anatomical',
+                        choices=['anatomical', 'full_body', 'random', 'none'],
+                        help='Spatial shift ablation (single-backbone variants). '
+                             'anatomical=BRASP+SGPShift (default); full_body=Shift-GCN-style; '
+                             'random=structure-free control; none=no shift. See BMVC rebuttal Table 12.')
     parser.add_argument('--split_type', type=str, default='xsub', choices=['xsub', 'xview', 'xset'],
                         help='Split type (default: xsub)')
     parser.add_argument('--epochs',     type=int,   default=None, help='Override epochs')
@@ -338,8 +343,11 @@ def main():
     elif variant == 'x_efficient':
         model = build_shiftfuse_zero_x(**common)
     else:
-        # nano_tiny_efficient and any future single-backbone variants
-        model = build_shiftfuse_zero(variant=variant, **common)
+        # nano_tiny_efficient and any future single-backbone variants.
+        # shift_type enables the BRASP/SGPShift ablation (BMVC rebuttal Table 12).
+        if args.shift_type != 'anatomical':
+            print(f"  Shift ablation: shift_type='{args.shift_type}' (BRASP/SGPShift replaced)")
+        model = build_shiftfuse_zero(variant=variant, shift_type=args.shift_type, **common)
 
     print(f"  Model created: {sum(p.numel() for p in model.parameters()):,} parameters")
 

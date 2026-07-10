@@ -50,30 +50,68 @@ def get_channel_groups(C: int) -> dict:
     }
 
 
-def compute_shift_indices(A: torch.Tensor, C: int) -> torch.Tensor:
+def compute_shift_indices(A: torch.Tensor, C: int,
+                          shift_type: str = 'anatomical',
+                          seed: int = 0) -> torch.Tensor:
     """
     Precompute per-channel joint-permutation indices for BodyRegionShift.
 
     For each channel c and joint v, shift_indices[c, v] holds the source
     joint that channel c at position v should read from.
 
-    Arms/legs/torso channels: permuted within the joints of their region.
-    Cross-body channels:      permuted via graph-neighbour cycling.
+    shift_type selects the routing rule:
+      'anatomical' (default) — arms/legs/torso channels permuted within their
+                               body region; cross-body via graph-neighbour
+                               cycling (the BRASP prior).
+      'full_body'            — Shift-GCN-style: every channel cycles graph
+                               neighbours across the whole skeleton, ignoring
+                               body-region grouping (hop-based, anatomy-free).
+      'random'               — random per-channel joint permutation (seeded);
+                               a structure-free control.
+      'none' / 'identity'    — no shift (identity permutation).
+
+    The last three are ablation controls used to isolate the anatomical prior
+    (BMVC'26 rebuttal, Table 12: random 82.6, full-body 83.4, anatomical 84.6).
 
     Args:
-        A:  (V, V) float adjacency matrix.  A[v, w] > 0 ↔ v,w are connected.
-        C:  Number of channels.
+        A:          (V, V) float adjacency matrix.  A[v, w] > 0 ↔ v,w connected.
+        C:          Number of channels.
+        shift_type: Routing rule (see above).
+        seed:       RNG seed for the 'random' control (reproducibility).
 
     Returns:
         shift_indices: LongTensor (C, V)
     """
     V = A.shape[0]
-    shift_indices = torch.zeros(C, V, dtype=torch.long)
-    channel_groups = get_channel_groups(C)
 
-    # Precompute graph neighbours for cross-body group
+    # ── Ablation controls (isolate the anatomical prior) ─────────────────────
+    if shift_type in ('none', 'identity'):
+        return torch.arange(V, dtype=torch.long).unsqueeze(0).expand(C, V).clone()
+    if shift_type == 'random':
+        g = torch.Generator().manual_seed(seed)
+        return torch.stack([torch.randperm(V, generator=g) for _ in range(C)], dim=0)
+
+    # Precompute graph neighbours (used by anatomical cross-body + full_body)
     A_np = A.numpy() if isinstance(A, torch.Tensor) else np.array(A)
     neighbors = [list(np.where(A_np[v] > 0)[0]) for v in range(V)]
+
+    if shift_type == 'full_body':
+        # Shift-GCN-style: every channel cycles graph neighbours across the whole
+        # skeleton — hop-based, no body-region grouping.
+        shift_indices = torch.zeros(C, V, dtype=torch.long)
+        for c in range(C):
+            for v in range(V):
+                nbrs = neighbors[v]
+                shift_indices[c, v] = v if len(nbrs) == 0 else nbrs[c % len(nbrs)]
+        return shift_indices
+
+    if shift_type != 'anatomical':
+        raise ValueError(
+            f"Unknown shift_type '{shift_type}' "
+            "(expected 'anatomical' | 'full_body' | 'random' | 'none')")
+
+    shift_indices = torch.zeros(C, V, dtype=torch.long)
+    channel_groups = get_channel_groups(C)
 
     for group_name, ch_slice in channel_groups.items():
         ch_list = list(range(ch_slice.start, ch_slice.stop))
@@ -127,11 +165,17 @@ class BodyRegionShift(nn.Module):
     Args:
         channels:     Number of input/output channels (must equal C).
         A:            (V, V) adjacency tensor used for cross-body neighbour lookup.
+        shift_type:   'anatomical' (BRASP) | 'full_body' | 'random' | 'none'.
+                      The last three are ablation controls (see
+                      compute_shift_indices).
+        seed:         RNG seed for the 'random' control.
     """
 
-    def __init__(self, channels: int, A: torch.Tensor):
+    def __init__(self, channels: int, A: torch.Tensor,
+                 shift_type: str = 'anatomical', seed: int = 0):
         super().__init__()
-        shift_indices = compute_shift_indices(A, channels)
+        self.shift_type = shift_type
+        shift_indices = compute_shift_indices(A, channels, shift_type=shift_type, seed=seed)
         self.register_buffer('shift_indices', shift_indices)  # (C, V), no grad
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

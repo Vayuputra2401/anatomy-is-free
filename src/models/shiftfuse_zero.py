@@ -156,6 +156,7 @@ class EfficientZeroBlock(nn.Module):
         use_part_att:      bool               = False,
         part_att_reduce:   int                = 4,
         tla:               nn.Module          = None,
+        shift_type:        str                = 'anatomical',
     ):
         super().__init__()
         self.K_gcn = len(A_gcn_partitions)
@@ -169,11 +170,24 @@ class EfficientZeroBlock(nn.Module):
             ])
 
         # ── 0-param spatial routing ──────────────────────────────────────────
-        self.brasp     = BodyRegionShift(channels=in_channels, A=A_flat)
-        self.sgp_shift = SGPShift(
-            channels=in_channels, A_intra=A_intra, A_inter=A_inter,
-            num_joints=num_joints,
-        )
+        # shift_type='anatomical' (default) runs the full BRASP + SGPShift prior.
+        # The ablation controls (BMVC'26 rebuttal, Table 12) replace the whole
+        # mechanism with a single shift: 'random' / 'full_body' route BRASP
+        # accordingly and disable SGPShift; 'none' disables both (82.8 baseline).
+        self.shift_type = shift_type
+        if shift_type == 'anatomical':
+            self.brasp     = BodyRegionShift(channels=in_channels, A=A_flat)
+            self.sgp_shift = SGPShift(
+                channels=in_channels, A_intra=A_intra, A_inter=A_inter,
+                num_joints=num_joints,
+            )
+        elif shift_type == 'none':
+            self.brasp     = nn.Identity()
+            self.sgp_shift = nn.Identity()
+        else:  # 'random' | 'full_body' — single control shift, SGPShift off
+            self.brasp     = BodyRegionShift(channels=in_channels, A=A_flat,
+                                             shift_type=shift_type)
+            self.sgp_shift = nn.Identity()
 
         # ── Joint identity embedding (in_channels — before STC and GCN) ─────
         self.je = JointEmbedding(in_channels, num_joints)
@@ -301,9 +315,11 @@ class ShiftFuseZero(nn.Module):
         num_streams:  int   = 4,
         stream_names: list  = None,
         use_tla:      bool  = None,
+        shift_type:   str   = 'anatomical',
     ):
         super().__init__()
 
+        self.shift_type = shift_type
         if variant not in ZERO_VARIANTS:
             raise ValueError(f"Unknown variant '{variant}'. Choose from {list(ZERO_VARIANTS.keys())}")
 
@@ -446,6 +462,7 @@ class ShiftFuseZero(nn.Module):
                     use_part_att     = (stage_part and is_last),
                     part_att_reduce  = _part_att_reduce,
                     tla              = stage_tla if is_last else None,
+                    shift_type       = shift_type,
                 )
                 stage_blocks.append(block)
                 block_idx_global += 1

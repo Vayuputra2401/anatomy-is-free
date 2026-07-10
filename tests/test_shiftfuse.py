@@ -71,12 +71,12 @@ def _mib(batch=B, c=C, t=T, v=V):
 # ---------------------------------------------------------------------------
 
 class TestBodyRegionShift:
-    def _make_shift(self, channels=32):
+    def _make_shift(self, channels=32, shift_type='anatomical'):
         from src.models.graph import Graph
         import numpy as np
         g = Graph(layout='ntu-rgb+d', strategy='spatial', max_hop=1, raw_partitions=True)
         A_flat = torch.tensor((g.A.sum(0) > 0).astype('float32'))
-        return BodyRegionShift(channels, A_flat)
+        return BodyRegionShift(channels, A_flat, shift_type=shift_type)
 
     def test_zero_params(self):
         shift = self._make_shift(32)
@@ -92,6 +92,37 @@ class TestBodyRegionShift:
     def test_shift_indices_buffer_no_grad(self):
         shift = self._make_shift(32)
         assert not shift.shift_indices.requires_grad
+
+    # ── Ablation switch (BMVC'26 rebuttal Table 12) ──────────────────────────
+    def test_ablation_variants_zero_param_and_shape(self):
+        x = torch.randn(B, 32, T, V)
+        for st in ('anatomical', 'full_body', 'random', 'none'):
+            shift = self._make_shift(32, shift_type=st)
+            assert sum(p.numel() for p in shift.parameters()) == 0, \
+                f"shift_type={st} must be zero-parameter"
+            assert shift(x).shape == x.shape
+            assert not shift.shift_indices.requires_grad
+
+    def test_none_is_identity(self):
+        shift = self._make_shift(32, shift_type='none')
+        x = torch.randn(B, 32, T, V)
+        assert torch.equal(shift(x), x), "shift_type='none' must be a no-op"
+
+    def test_random_is_permutation(self):
+        # every channel's index row must be a permutation of the V joints
+        shift = self._make_shift(32, shift_type='random')
+        for row in shift.shift_indices:
+            assert sorted(row.tolist()) == list(range(V))
+
+    def test_full_body_differs_from_anatomical(self):
+        anat = self._make_shift(32, shift_type='full_body')
+        body = self._make_shift(32, shift_type='anatomical')
+        assert not torch.equal(anat.shift_indices, body.shift_indices)
+
+    def test_unknown_shift_type_raises(self):
+        import pytest
+        with pytest.raises(ValueError):
+            self._make_shift(32, shift_type='bogus')
 
 
 class TestFrozenDCTGate:
