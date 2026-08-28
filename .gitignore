@@ -8,3 +8,8 @@
 activate_ai.bat
 .claude
 __pycache__
+/Thesis
+# Contain personal identifiers (Kaggle username, GitHub handle) - kept locally,
+# untracked so they never ship in a review supplementary or go public.
+configs/environment/kaggle.yaml
+scripts/gcp_setup.sh

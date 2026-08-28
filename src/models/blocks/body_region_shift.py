@@ -17,15 +17,30 @@ import numpy as np
 
 
 # ---------------------------------------------------------------------------
-# NTU RGB+D 25-joint body region definitions (0-based indices)
+# Body region definitions.
+#
+# These are *derived* from the NTU-25 bone hierarchy by KATP rather than written
+# out by hand — see katp.py. The derivation reproduces the previously
+# hand-listed indices exactly (asserted in tests/test_katp.py), so this is a
+# provenance change, not a behavioural one:
+#
+#   left_arm  [4, 5, 6, 7, 21, 22]    shoulder → elbow → wrist → hand tip, thumb
+#   right_arm [8, 9, 10, 11, 23, 24]  shoulder → elbow → wrist → hand tip, thumb
+#   left_leg  [12, 13, 14, 15]        hip → knee → ankle → foot
+#   right_leg [16, 17, 18, 19]        hip → knee → ankle → foot
+#   torso     [0, 1, 2, 3, 20]        spine base → mid → shoulder → neck → head
+#
+# Call body_regions_for('nw-ucla') etc. to obtain the same structure for another
+# skeleton layout without hand-specifying anything.
 # ---------------------------------------------------------------------------
-BODY_REGIONS = {
-    'left_arm':  [4, 5, 6, 7, 21, 22],     # shoulder → elbow → wrist → hand tip, thumb
-    'right_arm': [8, 9, 10, 11, 23, 24],    # shoulder → elbow → wrist → hand tip, thumb
-    'left_leg':  [12, 13, 14, 15],           # hip → knee → ankle → foot
-    'right_leg': [16, 17, 18, 19],           # hip → knee → ankle → foot
-    'torso':     [0, 1, 2, 3, 20],           # spine base → spine mid → spine shoulder → neck → head
-}
+from .katp import partition_for as _katp_partition_for
+
+BODY_REGIONS = dict(_katp_partition_for('ntu-rgb+d'))
+
+
+def body_regions_for(layout: str) -> dict:
+    """Derive the body-region partition for any layout known to KATP."""
+    return dict(_katp_partition_for(layout))
 
 
 def get_channel_groups(C: int) -> dict:
